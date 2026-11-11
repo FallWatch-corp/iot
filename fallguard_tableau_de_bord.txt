@@ -1,0 +1,76 @@
+FALLGUARD - TABLEAU DE BORD ALIVECODE ET FONCTIONNEMENT (version 2)
+
+ARCHITECTURE (CHOIX FAIT PAR CLAUDE, A CONFIRMER AVEC TON EQUIPE)
+  Bracelet (ESP32 ou XIAO) --HTTP, Wi-Fi--> Raspberry Pi (fallguard_pi_pont.py + aliot-py)
+  --WebSocket--> ALIVEcode. Le bracelet ne parle pas directement a ALIVEcode (aucune
+  bibliotheque Aliot pour ESP32 trouvee ; ecrire le protocole a la main serait NON TESTE).
+
+CE QUI A ETE TESTE
+  - Les .ino : verification de syntaxe seulement, avec des bibliotheques simulees. Pas compiles
+    pour une vraie carte, pas essayes sur le materiel.
+  - Le pont Pi : essai avec un faux aliot (cycle prealerte, annulation, alerte, acquittement,
+    hors ligne). Jamais connecte au vrai ALIVEcode.
+  - fallguard_camera.py : verification de syntaxe seulement. picamera2 et MediaPipe jamais essayes.
+
+COMPORTEMENT DU BRACELET (v2)
+  1. Impact (|a| > 2,5 g par defaut, reglable) -> attente 1 s -> observation 3 s.
+  2. Chute retenue si immobile ET (chute libre vue OU orientation changee de 40 degres ou plus).
+  3. PREALERTE 15 s : buzzer par impulsions, ecran "CHUTE ?". Bouton = annuler (fausse alerte).
+  4. Sans annulation : ALERTE (buzzer continu, "CHUTE !"), le Pi est prevenu.
+  5. Appui long 2 s sur le bouton = SOS immediat.
+  6. En alerte, bouton = arreter le buzzer. Le Pi peut aussi arreter depuis le tableau de bord.
+  Tous les seuils sont des valeurs de depart a ajuster par essais (matelas, gestes du quotidien).
+  Risque connu : une vraie chute ou le bras reste en mouvement n'est pas retenue (exige
+  l'immobilite). Un geste brusque suivi d'une immobilite avec bras tourne peut etre retenu a tort.
+
+CAMERA (fallguard_camera.py, optionnel)
+  - Images gardees en memoire seulement ; une photo est enregistree seulement a l'alerte.
+  - Angle du torse (epaules -> hanches) avec MediaPipe Pose : couche / debout.
+  - La camera NE CANCELLE JAMAIS une alerte. Elle precise seulement : confirmee, personne
+    debout (a verifier vite), personne non visible, incertain, camera indisponible.
+  - Sans picamera2 ou MediaPipe, le Pi prend une simple photo comme avant.
+  - Installation : sudo apt install python3-picamera2 ; pip install mediapipe
+    --break-system-packages (Pi 64 bits). A verifier sur ton Pi.
+  - Vie privee (Loi 25) : decision a prendre avec ton equipe, je ne l'ai pas tranchee.
+
+MISE EN PLACE
+ 1. ALIVEcode, "Objets IoT" : cree 2 objets. Copie obj_id et auth_token dans config.ini
+    (modele : config.ini.exemple). Le nom de section = nom dans OBJETS du script.
+ 2. Pi : sudo apt install python3-flask ; pip install aliot-py --break-system-packages
+    Mettre dans le meme dossier : fallguard_pi_pont.py, fallguard_camera.py, config.ini.
+    Lancer : python3 fallguard_pi_pont.py       Test : http://ADRESSE_DU_PI:5000/etat
+ 3. Bracelets : modifier SSID, mot de passe, adresse du Pi, puis televerser
+    fallguard_esp32_aliot.ino (ESP32 DevKit) ou fallguard_xiao_aliot.ino (XIAO ESP32C3).
+ 4. Interface ALIVEcode : lier chaque composant a un champ ou une action (tableau ci-dessous).
+    A VERIFIER dans ton interface : je n'ai vu que ta capture.
+
+COMPOSANTS SUGGERES (idees, rien n'est decide)
+  Composant ALIVEcode       | Champ du document / action  | Contenu
+  --------------------------+-----------------------------+----------------------------------
+  Texte / Mylog (grand)     | /document/statut            | Normal, prealerte, CHUTE CONFIRMEE...
+  Feu de circulation        | /document/niveau            | repos / prealerte / alerte / hors_ligne
+  Avertisseur sonore        | /document/chute             | sonne chez le prepose
+  Statut d'un objet IoT     | l'objet lui-meme            | pont Pi connecte ou non
+  Indicateur "En ligne"     | /document/en_ligne          | bracelet joint recemment
+  Indicateur "Porte"        | /document/porte             | faux = bracelet non porte
+  Jauge pouls               | /document/bpm               | BPM en direct
+  Jauge Wi-Fi               | /document/rssi              | force du signal (dBm), base du RSSI piece
+  Jauge acceleration        | /document/accel             | |a| en g
+  Texte                     | /document/verification      | verdict camera
+  Texte                     | /document/type_alerte       | chute ou sos
+  Texte                     | /document/derniere_chute    | date et heure
+  Image (si dispo)          | /document/photo             | nom du fichier sur le Pi (pas l'image)
+  Mylog                     | /document/journal           | 10 derniers evenements
+  Bouton "Arreter l'alarme" | action  arreter_alarme      | coupe le buzzer et la LED du Pi
+  Bouton "Tester l'alarme"  | action  tester_alarme       | test 5 s, sans photo
+  Interrupteur              | /document/detection_active  | active ou coupe la detection
+  Curseur                   | /document/seuil_chute       | seuil d'impact de 1,2 a 4,0 g
+
+POINTS INCONNUS
+  - Le tableau de bord n'affiche pas l'image : le champ photo ne donne que le nom du fichier sur
+    le Pi. Voir la photo = copier le fichier ou ajouter plus tard une route d'affichage.
+  - Format exact des valeurs du curseur et de l'interrupteur (le code accepte nombre ou texte).
+  - Localisation par piece (RSSI) : decidee mais pas codee ici. GPS : non envoye.
+  - Le bracelet non porte est devine par le capteur de pouls (contact IR > 50000) ; a valider.
+  - Autonomie de la batterie : non mesuree, aucune economie d'energie codee dans cette version.
+  - Niveau de batterie : INCONNU si ton PCB permet de le lire (pont diviseur sur VBAT ?).

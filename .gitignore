@@ -1,0 +1,6 @@
+config.ini
+venv/
+__pycache__/
+*.pyc
+chute_*.jpg
+secrets.h
