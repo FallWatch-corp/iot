@@ -150,7 +150,12 @@ detection = {"active": True}
 
 
 def alterner_detection(value):
-    active = bool(value)
+    # L'interrupteur peut envoyer True/False, 1/0 ou du texte ("false") : bool("false") = True !
+    if isinstance(value, str):
+        active = value.strip().lower() in ("true", "1", "on", "oui")
+    else:
+        active = bool(value)
+    print("Interrupteur detection recu :", repr(value), "->", active)
     detection["active"] = active
     fallguard_utils.set_detection(active)
     fallguard.update_doc({"/doc/detection_active": active})

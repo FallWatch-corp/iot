@@ -28,7 +28,7 @@ VITESSE = 115200
 ser = None
 # Lignes de débogage du bracelet affichées dans le terminal (pour régler la détection de chute)
 MOTS_DEBOGAGE = ("Impact", "Verification", "PREALERTE", "ALERTE", "Seuil", "Chute", "Prealerte",
-                 "Alarme", "TEST", "Rappel")
+                 "Alarme", "TEST", "Rappel", "Detection")
 verrou = threading.Lock()
 
 # ---------- état de la simulation ----------

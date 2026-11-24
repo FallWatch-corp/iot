@@ -836,8 +836,16 @@ void lireCommandes() {
       }
     } else if (c == 'e') {
       detectionActive = true;
+      Serial.println("Detection activee depuis l'ordinateur");
     } else if (c == 'x') {
       detectionActive = false;
+      // Couper la detection arrete aussi une chute en cours (verification, prealerte ou
+      // alerte de chute). Un SOS et le test de l'alarme continuent.
+      if (etat == VERIF || etat == PREALERTE || (etat == ALERTE && typeAlerte == "chute")) {
+        if (etat == PREALERTE) annulerPi();
+        retourAuRepos();
+      }
+      Serial.println("Detection coupee depuis l'ordinateur");
     } else if (c == 's') {
       attendSeuil = true;
     } else if (c == 'v') {
