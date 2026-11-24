@@ -253,9 +253,11 @@ class DetecteurGestes:
 
     def analyser(self, image):
         """Une image BGR -> (image, posture, mesures, main myHand ou None)."""
-        image = self.cv2.flip(image, 1)                    # effet miroir (plus naturel à l'écran)
+        # Pas d'effet miroir (pas de cv2.flip) : MediaPipe suppose une image en miroir et
+        # flipType=True de quickhands corrige déjà son étiquette pour une image NON inversée.
+        # Avec cv2.flip EN PLUS, Left/Right était inversé deux fois (donc faux), et le test
+        # du pouce de fingersUp aussi. Les gestes, eux, ne dépendent pas de la main.
         h, l = image.shape[:2]
-        # flipType=True : le type de main est corrigé pour l'effet miroir
         if self.afficher:
             allHands, image = self.detecteur.findHands(image, draw=True, flipType=True)
         else:

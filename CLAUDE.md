@@ -193,6 +193,9 @@ pages étaient coupés dans ce que j'ai pu lire : je ne décris que ce que j'ai 
   cours (un ou plusieurs). Liste exacte des capteurs vus en cours : INCONNU (vu dans les pages : DHT11,
   photorésistance, bouton, LED, buzzer).
 
+- 24 nov. (info.md, fait sur le Pi) : venv `venv3.11` (uv, mediapipe 0.10.x, numpy<2), caméra ov5647 lue par
+  `camera_rpicam.py` (rpicam-vid), bracelet sur `/dev/ttyUSB0`, `iteration3.py` se connecte. Gauche/droite inversé :
+  corrigé en retirant `cv2.flip` de `analyser()` (flipType=True gardé) ; image affichée sans miroir. Pas encore testé sur le Pi.
 - 22 nov. : PROBLÈME PCB (XIAO) non réglé : la LED rouge du MPU6050 s'allume sur tous les connecteurs, mais le
   MAX30102 et l'OLED ne marchent pas. Cause INCONNUE (pistes : ordre VCC/GND des connecteurs différent de celui des
   modules, module abîmé, soudure). Sketch de diagnostic : `test_i2c_xiao/`. Résultat du scan : INCONNU.
