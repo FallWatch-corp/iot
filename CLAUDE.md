@@ -18,6 +18,8 @@ Ne confonds pas ce qui est DÉCIDÉ et ce qui a été seulement SUGGÉRÉ. Si un
   (2) réponse « Ça va ? » pendant la préalerte (1 doigt = ça va / annule, 2 doigts = aide tout de suite) ;
   (3) geste validé seulement si le MPU6050 du bracelet a bougé en même temps (fusion caméra + bracelet) ;
   (4) « chut » (index sur la bouche) = buzzer coupé 5 min ; (5) main levée = appel non urgent.
+  24 nov. (demandé par l'utilisateur) : « chut » ne coupe plus le buzzer, il met l'interrupteur détection
+  sur OFF ; un autre geste le remet ON (choisi par Claude : pouce levé, au repos seulement).
   La date de remise (17 nov.) est passée ; nouvelle date / pénalité : INCONNU.
 - Le bracelet n'a pas de caméra ; la caméra est celle du Pi.
 - Les PCB (version XIAO) sont reçus (7 nov.) : l'utilisateur est satisfait du résultat, surtout de la taille.

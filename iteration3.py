@@ -146,11 +146,24 @@ def tester_alarme(data=None):
     fallguard.update_component("Mybuzzer", FREQUENCE_ALARME)
 
 
+detection = {"active": True}
+
+
 def alterner_detection(value):
     active = bool(value)
+    detection["active"] = active
     fallguard_utils.set_detection(active)
     fallguard.update_doc({"/doc/detection_active": active})
     journal("Detection " + ("activee" if active else "coupee"))
+
+
+# Gestes « chut » / pouce levé : même effet que l'interrupteur de l'interface
+def couper_detection():
+    alterner_detection(False)
+
+
+def activer_detection():
+    alterner_detection(True)
 
 
 def regler_seuil(value):
@@ -176,6 +189,8 @@ def traiter_mesures(d):
     liaison["derniere_mesure"] = time.time()
     if d.get("rot") is not None:                   # rotation max du poignet (fusion des gestes)
         poignet["mesure"] = True
+        poignet["recents"] = [(t, r) for t, r in poignet.get("recents", [])
+                              if time.time() - t <= FENETRE_POIGNET] + [(time.time(), d["rot"])]
         if d["rot"] >= SEUIL_ROT_GESTE:
             poignet["dernier_mouvement"] = time.time()
     if not liaison["en_ligne"]:
@@ -355,8 +370,16 @@ def choisir_action(geste, etat):
         return "Test de l'alarme", fallguard_utils.tester_alarme, False
     elif geste == "main_levee" and etat == "repos":
         return "Appel non urgent envoye", appel_non_urgent, False
-    elif geste == "chut":
-        return "Buzzer coupe 5 min", fallguard_utils.couper_son, False
+    # « chut » = détection OFF, pouce levé = détection ON (seulement au repos : pendant une
+    # préalerte / alerte, le pouce annule ou arrête l'alarme, voir plus haut)
+    elif geste == "chut" and etat == "repos":
+        if not detection["active"]:
+            return "Detection deja coupee", lambda: None, False
+        return "Detection coupee (interrupteur OFF)", couper_detection, False
+    elif geste == "pouce" and etat == "repos":
+        if detection["active"]:
+            return "Detection deja active", lambda: None, False
+        return "Detection activee (interrupteur ON)", activer_detection, False
     return None
 
 
@@ -376,7 +399,10 @@ def quand_geste(geste):
         texte, fonction, urgent = choix
         bouge = poignet_a_bouge()
         if bouge is False and not urgent:
-            resultat = "REFUSE : le bracelet n'a pas bouge (autre personne ?)"
+            rot_max = max([r for t, r in poignet.get("recents", [])] or [0])
+            resultat = ("REFUSE : le bracelet n'a pas bouge (rotation max " + str(int(rot_max))
+                        + " deg/s en " + str(FENETRE_POIGNET) + " s, seuil "
+                        + str(SEUIL_ROT_GESTE) + ")")
         else:
             fonction()
             resultat = texte
