@@ -59,12 +59,13 @@ HAUT_SANS_VISAGE = 0.4        # main levée sans visage vu : poignet dans les 40
 
 # ---------- Caméra ----------
 class Camera:
-    """Module caméra du Pi (picamera2) ou, à défaut, webcam USB (OpenCV). Images en BGR."""
+    """Camera du Pi (picamera2), sinon rpicam-vid (sans picamera2), sinon webcam USB. Images en BGR."""
 
     def __init__(self):
         import cv2
         self.cv2 = cv2
         self.picam = None
+        self.rpicam = None
         self.webcam = None
         try:
             from picamera2 import Picamera2
@@ -75,24 +76,42 @@ class Camera:
             self.picam.configure(config)
             self.picam.start()
             self.nom = "module camera du Pi"
+            return
         except Exception:
             self.picam = None
-            self.webcam = cv2.VideoCapture(INDEX_WEBCAM)
-            self.webcam.set(cv2.CAP_PROP_FRAME_WIDTH, LARGEUR)
-            self.webcam.set(cv2.CAP_PROP_FRAME_HEIGHT, HAUTEUR)
-            if not self.webcam.isOpened():
-                raise IOError("aucune camera (ni picamera2, ni webcam " + str(INDEX_WEBCAM) + ")")
-            self.nom = "webcam USB"
+        try:
+            from camera_rpicam import CameraRpicam
+            self.rpicam = CameraRpicam(LARGEUR, HAUTEUR)
+            ok, image = self.rpicam.read()
+            if not ok:
+                raise IOError("rpicam-vid ne renvoie rien")
+            self.nom = "module camera du Pi (rpicam-vid)"
+            return
+        except Exception:
+            if self.rpicam is not None:
+                self.rpicam.release()
+            self.rpicam = None
+        self.webcam = cv2.VideoCapture(INDEX_WEBCAM)
+        self.webcam.set(cv2.CAP_PROP_FRAME_WIDTH, LARGEUR)
+        self.webcam.set(cv2.CAP_PROP_FRAME_HEIGHT, HAUTEUR)
+        if not self.webcam.isOpened():
+            raise IOError("aucune camera (ni picamera2, ni rpicam-vid, ni webcam " + str(INDEX_WEBCAM) + ")")
+        self.nom = "webcam USB"
 
     def lire(self):
         if self.picam is not None:
             return self.picam.capture_array("main")
+        if self.rpicam is not None:
+            ok, image = self.rpicam.read()
+            return image if ok else None
         ok, image = self.webcam.read()
         return image if ok else None
 
     def fermer(self):
         if self.picam is not None:
             self.picam.stop()
+        if self.rpicam is not None:
+            self.rpicam.release()
         if self.webcam is not None:
             self.webcam.release()
 
