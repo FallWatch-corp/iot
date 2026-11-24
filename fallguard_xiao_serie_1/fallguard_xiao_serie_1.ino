@@ -5,7 +5,8 @@
 // publie dans le document ALIVEcode ; il renvoie des commandes (a, t, e, x, s+octet).
 // IMPORTANT : fermer le moniteur serie de l'IDE Arduino avant de lancer le programme Python
 // (un seul programme peut utiliser le port a la fois).
-// Le Wi-Fi ne sert plus qu'a obtenir l'heure (NTP). Sans Wi-Fi : l'ecran affiche "--:--".
+// Le Wi-Fi sert a obtenir l'heure (NTP) et a scanner les balises de piece (canal 1).
+// Sans Wi-Fi configure : l'ecran affiche "--:--", mais la localisation par balises fonctionne.
 //
 
 //
@@ -15,8 +16,9 @@
 //       1) impact : |a| depasse le seuil (2,5 g par defaut, reglable depuis le tableau de bord),
 //          eventuellement precede d'une chute libre (|a| sous 0,5 g) ;
 //       2) attente de 1 s, puis observation pendant 3 s ;
-//       3) la chute est retenue si le bracelet reste IMMOBILE ET (chute libre vue OU orientation
-//          changee d'au moins 40 degres). Sinon : fausse alerte, on ne fait rien.
+//       3) la chute est retenue si une chute libre a ete vue avant l'impact OU si l'orientation du
+//          poignet a change d'au moins 40 degres. La personne peut bouger apres la chute (se debattre,
+//          essayer de se relever) : l'immobilite n'est PAS exigee. Sinon : fausse alerte.
 //   - PREALERTE de 15 s : buzzer par impulsions, ecran "CHUTE ?". Un appui sur le bouton ANNULE
 //     (le Pi est prevenu). Sans appui, l'ALERTE part : buzzer continu, ecran "CHUTE !", et le Pi
 //     est prevenu (photo + verification par camera).
@@ -95,10 +97,9 @@ bool detectionActive = true;                  // false = chutes ignorees (tablea
 const float seuilChuteLibre = 0.5;            // g : sous cette valeur = chute libre
 const unsigned long fenetreChuteLibre = 1000; // ms : chute libre valable jusqu'a l'impact
 const unsigned long attenteApresImpact = 1000;// ms : laisser le bracelet se stabiliser
-const unsigned long dureeVerification = 3000; // ms : observation de l'immobilite
+const unsigned long dureeVerification = 3000; // ms : mesure de la nouvelle orientation (moyenne)
 const float seuilGyroMouvement = 60.0;        // deg/s : au-dessus = mouvement
 const float ecartAccelMouvement = 0.35;       // g : ecart a 1 g au-dessus duquel = mouvement
-const float partMouvementMax = 0.25;          // max. 25 % d'echantillons "en mouvement"
 const float angleChangementMin = 40.0;        // deg : changement d'orientation exige
 const unsigned long delaiSOS = 2000;          // ms : appui long = SOS
 unsigned long delaiAnnulation = 15000;        // ms : modifiable par le Pi (reponse "delai")
@@ -137,9 +138,14 @@ unsigned long dernierSerie = 0;
 unsigned long derniereLectureMAX = 0;
 unsigned long dernierEnvoiDonnees = 0;
 // Localisation par piece : scan des balises "FG_<piece>" (voir fallguard_balise.ino)
-const unsigned long intervalleScanBalises = 10000;   // ms entre deux scans
+const unsigned long intervalleScanBalises = 5000;    // ms entre deux scans
+const uint8_t canalBalises = 1;                       // = CANAL dans fallguard_balise.ino
+const uint32_t dureeScanCanal = 400;                  // ms d'ecoute du canal (balise toutes les ~100 ms)
+const unsigned long delaiMaxScan = 5000;              // ms : scan bloque -> abandonne
 unsigned long dernierScanBalises = 0;
 bool scanEnCours = false;
+bool scanImmediat = false;                            // true = scanner tout de suite (preal./alerte)
+bool scanUrgent = false;                              // le scan en cours a ete demande par une alerte
 
 // ---------- Détection de chute ----------
 float refX = 0, refY = 0, refZ = 1;           // direction de la gravité au repos (moyenne lente)
@@ -158,6 +164,14 @@ unsigned long debutRappel = 0;          // rappel "mettez votre bracelet" (comma
 bool rappelActif = false;
 const unsigned long dureeRappel = 6000; // ms d'affichage du rappel ; 3 bips au debut
 bool buzzerSon = false;
+// Iteration 3 (gestes du Pi)
+float picGyro = 0;                      // plus forte rotation (deg/s) depuis le dernier envoi
+unsigned long debutAppel = 0;          // appel non urgent (commande n : main levee)
+bool appelActif = false;
+const unsigned long dureeAppel = 6000; // ms d'affichage ; 2 bips au debut
+unsigned long debutSilence = 0;        // geste "chut" (commande m) : buzzer coupe
+bool silenceActif = false;
+const unsigned long dureeSilence = 300000; // ms (5 min)
 
 // ---------- Calcul du pouls (BPM) ----------
 int bpm = 0;                       // pouls calculé (0 = pas de mesure)
@@ -444,17 +458,21 @@ void afficherEcranAlerte() {
     unsigned long ecoule = millis() - debutPrealerte;
     unsigned long reste = (ecoule >= delaiAnnulation) ? 0 : (delaiAnnulation - ecoule) / 1000 + 1;
     display.setTextSize(1);
-    display.setCursor(0, 28);
+    display.setCursor(0, 22);
     display.print("Alerte dans ");
     display.print(reste);
     display.println(" s");
-    display.setCursor(0, 48);
-    display.println("Bouton = annuler");
+    display.setCursor(0, 34);
+    display.println("Ca va ? Montrez :");
+    display.setCursor(0, 44);
+    display.println("1 doigt=oui 2=aide");
+    display.setCursor(0, 56);
+    display.println("ou Bouton = annuler");
   } else if (etat == ALERTE) {
     display.println(typeAlerte == "sos" ? "SOS !" : "CHUTE !");
     display.setTextSize(1);
     display.setCursor(0, 30);
-    display.println("Aide prevenue");
+    display.println(silenceActif ? "Aide prevenue (muet)" : "Aide prevenue");
     display.setCursor(0, 48);
     display.println("Bouton = arreter");
   } else {
@@ -482,9 +500,25 @@ void afficherEcranRappel() {
   display.display();
 }
 
+void afficherEcranAppel() {
+  display.clearDisplay();
+  display.setTextColor(SSD1306_WHITE);
+  display.setTextSize(2);
+  display.setCursor(0, 4);
+  display.println("APPEL");
+  display.setTextSize(1);
+  display.setCursor(0, 30);
+  display.println("Demande envoyee");
+  display.setCursor(0, 42);
+  display.println("Quelqu'un va venir");
+  display.display();
+}
+
 void afficherEcran() {
   if (!oledOK) return;
-  if (rappelActif && etat == REPOS) {
+  if (appelActif && etat == REPOS) {
+    afficherEcranAppel();
+  } else if (rappelActif && etat == REPOS) {
     afficherEcranRappel();
   } else if (etat == REPOS || etat == VERIF) {
     afficherEcranNormal();    // l'écran ne change qu'en préalerte, alerte ou test
@@ -558,6 +592,10 @@ void connecterWiFi() {
     Serial.println(WiFi.localIP());
   } else {
     Serial.println("WiFi : ECHEC (SSID, mot de passe, reseau 2,4 GHz ?)");
+    // Sinon l'ESP32 reessaie de se connecter sans arret, et pendant ces essais le scan des
+    // balises echoue ("scan impossible") : pas d'heure, mais la localisation fonctionne.
+    WiFi.disconnect();
+    Serial.println("WiFi : abandon (localisation par balises seulement)");
   }
 }
 
@@ -576,29 +614,66 @@ void envoyerChutePi(const String& type) {
 
 // Localisation : scan Wi-Fi EN ARRIERE-PLAN (async) pour ne pas bloquer la detection de chute.
 // Envoie "W:Chambre,-48;Salon,-71" (seulement les reseaux "FG_..."), "W:" si aucune balise.
+// Scan demande par une prealerte ou une alerte : ";!" a la fin ("W:Chambre,-48;!") pour que Python
+// fixe la piece de la chute tout de suite, sans attendre un 2e scan.
+// On n'ecoute QUE le canal des balises (400 ms au lieu de ~2 s pour 13 canaux) : moins de balises
+// ratees (moins de "W:" vides) et la connexion Wi-Fi (heure) est moins derangee.
 void gererScanBalises() {
   if (!scanEnCours) {
-    if (millis() - dernierScanBalises >= intervalleScanBalises) {
+    if (scanImmediat || millis() - dernierScanBalises >= intervalleScanBalises) {
       dernierScanBalises = millis();
-      WiFi.scanNetworks(true);             // true = asynchrone
-      scanEnCours = true;
+      scanUrgent = scanImmediat;
+      scanImmediat = false;
+      // async, sans reseaux caches, scan actif, duree par canal, canal des balises
+      int r = WiFi.scanNetworks(true, false, false, dureeScanCanal, canalBalises);
+      scanEnCours = (r == WIFI_SCAN_RUNNING);
+      if (!scanEnCours) {
+        Serial.println("Balises : scan impossible, nouvel essai dans 5 s");
+        // Wi-Fi de la maison perdu : ses essais de reconnexion bloquent le scan -> on les arrete
+        if (WiFi.status() != WL_CONNECTED) WiFi.disconnect();
+      }
     }
     return;
   }
   int n = WiFi.scanComplete();
-  if (n == WIFI_SCAN_RUNNING) return;
+  if (n == WIFI_SCAN_RUNNING) {
+    if (millis() - dernierScanBalises > delaiMaxScan) {   // scan bloque : on libere
+      WiFi.scanDelete();
+      scanEnCours = false;
+      Serial.println("Balises : scan trop long, abandonne");
+    }
+    return;
+  }
   scanEnCours = false;
   if (n < 0) return;                       // scan rate : on reessaie au prochain intervalle
-  String ligne = "W:";
-  bool premier = true;
+  // Meme nom capte deux fois (deux balises "FG_Salon" par erreur) : on garde le plus fort
+  String noms[10];
+  int forces[10];
+  int nb = 0;
   for (int i = 0; i < n; i++) {
     String ssid = WiFi.SSID(i);
-    if (!ssid.startsWith("FG_")) continue;
-    if (!premier) ligne += ";";
-    ligne += ssid.substring(3) + "," + String(WiFi.RSSI(i));
-    premier = false;
+    if (!ssid.startsWith("FG_") || ssid.length() <= 3) continue;
+    String nom = ssid.substring(3);
+    if (nom.indexOf(',') >= 0 || nom.indexOf(';') >= 0) continue;   // casserait la ligne "W:"
+    int rssi = WiFi.RSSI(i);
+    int j = 0;
+    while (j < nb && noms[j] != nom) j++;
+    if (j < nb) {
+      if (rssi > forces[j]) forces[j] = rssi;
+    } else if (nb < 10) {
+      noms[nb] = nom;
+      forces[nb] = rssi;
+      nb++;
+    }
   }
   WiFi.scanDelete();
+  String ligne = "W:";
+  for (int j = 0; j < nb; j++) {
+    if (j > 0) ligne += ";";
+    ligne += noms[j] + "," + String(forces[j]);
+  }
+  if (scanUrgent) ligne += (nb > 0) ? ";!" : "!";
+  scanUrgent = false;
   Serial.println(ligne);
 }
 
@@ -623,7 +698,19 @@ void mettreAJourBuzzer() {
   } else if (rappelActif && etat == REPOS) {
     unsigned long e = millis() - debutRappel;           // 3 bips courts, sans bloquer la detection
     son = (e < 1500) && (e % 500 < 150);
+  } else if (appelActif && etat == REPOS) {
+    unsigned long e = millis() - debutAppel;            // 2 bips courts
+    son = (e < 1000) && (e % 500 < 150);
   }
+  if (appelActif && millis() - debutAppel >= dureeAppel) {
+    appelActif = false;
+    afficherEcran();
+  }
+  if (silenceActif && millis() - debutSilence >= dureeSilence) {
+    silenceActif = false;
+    Serial.println("E:silence:fin");
+  }
+  if (silenceActif && etat != TEST) son = false;        // "chut" : l'alerte continue, sans son
   if (rappelActif && millis() - debutRappel >= dureeRappel) {
     rappelActif = false;
     afficherEcran();                                    // retour a l'ecran normal
@@ -658,6 +745,7 @@ void retourAuRepos() {
 void demarrerPrealerte() {
   etat = PREALERTE;
   debutPrealerte = millis();
+  scanImmediat = true;                 // localiser la chute tout de suite
   Serial.println("PREALERTE : chute probable, annulation possible avec le bouton");
   mettreAJourBuzzer();
   afficherEcran();
@@ -666,6 +754,7 @@ void demarrerPrealerte() {
 void passerEnAlerte(const String& type) {
   typeAlerte = type;
   etat = ALERTE;
+  scanImmediat = true;                 // SOS : pas de prealerte, on localise maintenant
   Serial.print("ALERTE (");
   Serial.print(type);
   Serial.println(")");
@@ -683,7 +772,7 @@ void demarrerTest() {
   Serial.println("TEST d'alarme (tableau de bord)");
 }
 
-// Envoie une ligne de mesures à l'ordinateur : D:bpm:accel:rssi:etat:doigt:type
+// Envoie une ligne de mesures à l'ordinateur : D:bpm:accel:rssi:etat:doigt:type:rot
 void envoyerDonnees() {
   int rssi = (WiFi.status() == WL_CONNECTED) ? WiFi.RSSI() : 0;
   Serial.print("D:");
@@ -698,7 +787,10 @@ void envoyerDonnees() {
   Serial.print(":");
   Serial.print(doigtPresent ? 1 : 0);
   Serial.print(":");
-  Serial.println(typeAlerte.length() > 0 ? typeAlerte : String("-"));
+  Serial.print(typeAlerte.length() > 0 ? typeAlerte : String("-"));
+  Serial.print(":");
+  Serial.println(picGyro, 0);         // rotation max de la derniere seconde (deg/s)
+  picGyro = 0;
 }
 
 // Commandes reçues de l'ordinateur (1 caractère chacune) :
@@ -706,6 +798,9 @@ void envoyerDonnees() {
 //   r = rappel "mettez votre bracelet" (3 bips + message)
 //   e = détection activée   x = détection coupée
 //   s + 1 octet = seuil de chute en dixièmes de g (ex. 25 = 2,5 g)
+//   Gestes (iteration 3, envoyes par le Pi) :
+//   v = "ca va" (annule la prealerte)   h = "aide" (alerte tout de suite pendant la prealerte)
+//   n = appel non urgent (main levee)   m = silence du buzzer 5 min (geste "chut")
 void lireCommandes() {
   static bool attendSeuil = false;
   while (Serial.available()) {
@@ -745,6 +840,26 @@ void lireCommandes() {
       detectionActive = false;
     } else if (c == 's') {
       attendSeuil = true;
+    } else if (c == 'v') {
+      if (etat == PREALERTE) {
+        retourAuRepos();
+        Serial.println("Prealerte annulee par geste (ca va)");
+        annulerPi();
+      }
+    } else if (c == 'h') {
+      if (etat == PREALERTE) passerEnAlerte("chute");    // la personne demande de l'aide
+    } else if (c == 'n') {
+      if (etat == REPOS) {
+        appelActif = true;
+        debutAppel = millis();
+        Serial.println("Appel non urgent (main levee)");
+        afficherEcran();
+      }
+    } else if (c == 'm') {
+      silenceActif = true;
+      debutSilence = millis();
+      Serial.println("E:silence:debut");
+      afficherEcran();
     }
   }
 }
@@ -807,7 +922,6 @@ void testerChute() {
   if (ecoule < attenteApresImpact + dureeVerification) return;
 
   // Phase 3 : décision
-  bool immobile = (nbEch > 0) && (nbMouv <= partMouvementMax * nbEch);
   float angle = 0;
   float mx = sommeX / nbEch, my = sommeY / nbEch, mz = sommeZ / nbEch;
   float na = sqrt(mx * mx + my * my + mz * mz);
@@ -816,7 +930,9 @@ void testerChute() {
     float c = (mx * refX + my * refY + mz * refZ) / (na * nr);
     angle = acos(constrain(c, -1.0, 1.0)) * 180.0 / PI;
   }
-  bool confirmee = immobile && (chuteLibreAuImpact || angle >= angleChangementMin);
+  // Pas de condition d'immobilite : chute libre avant l'impact OU poignet tourne suffit.
+  // (Le nombre d'echantillons "en mouvement" reste affiche pour les essais.)
+  bool confirmee = (nbEch > 0) && (chuteLibreAuImpact || angle >= angleChangementMin);
 
   Serial.print("Verification : mouvement ");
   Serial.print(nbMouv);
@@ -876,7 +992,10 @@ void gererBouton() {
 // =====================================================
 void setup() {
   Serial.begin(115200);
-  delay(1000);
+  // XIAO (USB natif) : attendre jusqu'à 5 s que le moniteur série soit ouvert,
+  // sinon les messages du démarrage (scan I2C, OLED...) sont perdus
+  while (!Serial && millis() < 5000) delay(10);
+  delay(500);
   Serial.println("FallGuard (bracelet, version 2)");
 
   pinMode(buzzer, OUTPUT);
@@ -916,7 +1035,10 @@ void loop() {
   // MPU6050 : 100 mesures par seconde pour ne pas rater l'impact
   if (mpuOK && millis() - dernierTestChute >= 10) {
     dernierTestChute = millis();
-    if (lireMPU()) testerChute();
+    if (lireMPU()) {
+      if (gyroTotal > picGyro) picGyro = gyroTotal;
+      testerChute();
+    }
   }
 
   // Fin de la préalerte (pas d'annulation) -> alerte

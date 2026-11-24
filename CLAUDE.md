@@ -5,12 +5,20 @@ Ne confonds pas ce qui est DÉCIDÉ et ce qui a été seulement SUGGÉRÉ. Si un
 « INCONNU » et pose la question. Dernière mise à jour : 11 nov. 2026.
 
 ## DÉCIDÉ (dit par l'utilisateur)
+- 17 nov. : PAS de condition d'immobilité après une chute (« plus physique ») : chute = impact + (chute libre avant
+  OU orientation changée ≥ 40°), puis préalerte de 15 s annulable (gardée). Essai « alerte immédiate sur choc ou
+  chute libre seule, sans préalerte » fait puis RETIRÉ à la demande de l'utilisateur (17 nov.).
 - Carte du bracelet : ESP32 DevKit pour le prototype de l'itération ; version PCB avec XIAO ESP32C3 (GPS retiré pour l'instant).
 - Capteurs : MPU6050 (0x68), MAX30102 (0x57, BPM), OLED SSD1306 (0x3C), buzzer, un bouton latéral. Pas de LED.
 - OLED : date + heure + BPM par défaut ; l'écran ne change qu'en cas de chute.
-- Localisation par pièce : Wi-Fi RSSI avec des balises ESP32 (codée, voir Fichiers ; pas encore testée avec les balises).
+- Localisation par pièce : Wi-Fi RSSI (pas encodée dans le code pour l'instant).
 - Itération 2 : l'utilisateur fait l'interface ALIVEcode ; les statistiques et les données froides viennent plus tard.
-- Itération 3 : on utilise le Raspberry Pi (avec sa caméra) pour les gestes.
+- Itération 3 : on utilise le Raspberry Pi (avec sa caméra) pour les gestes. Le programme tourne SUR LE PI (dit le 22 nov.).
+- 22 nov. : gestes retenus = (1) « Signal for Help » (paume, pouce replié, puis doigts refermés) -> SOS ;
+  (2) réponse « Ça va ? » pendant la préalerte (1 doigt = ça va / annule, 2 doigts = aide tout de suite) ;
+  (3) geste validé seulement si le MPU6050 du bracelet a bougé en même temps (fusion caméra + bracelet) ;
+  (4) « chut » (index sur la bouche) = buzzer coupé 5 min ; (5) main levée = appel non urgent.
+  La date de remise (17 nov.) est passée ; nouvelle date / pénalité : INCONNU.
 - Le bracelet n'a pas de caméra ; la caméra est celle du Pi.
 - Les PCB (version XIAO) sont reçus (7 nov.) : l'utilisateur est satisfait du résultat, surtout de la taille.
 - Trop tard pour ajouter un capteur de température sur le PCB (dit par l'utilisateur).
@@ -18,14 +26,22 @@ Ne confonds pas ce qui est DÉCIDÉ et ce qui a été seulement SUGGÉRÉ. Si un
   livré le 26 sept.). Fiche vue sur Amazon : plage 20 g à 2 kg, longueur 21 mm, zone sensible d'environ 7,5 mm.
 - Commande Amazon livrée le 26 sept. : 2 ESP32 DevKit (ELEGOO), 2 GY-NEO6MV2 (GPS), capteur de pression MECCANIXITY,
   5 modules de charge TP4056 (+ d'autres articles non vus).
-- 10 nov. : l'itération 2 répond aux attentes. Capteur de pression REPORTÉ à l'itération 3 (après test du PCB et du
-  boîtier). Le XIAO doit fonctionner comme l'ESP32 DevKit (même code, mêmes commandes).
-- Procédure par envoi d'action retenue : `enregistrer_chute` seulement (déclencheur `/doc/chute` = true).
-  `rappel_bracelet` est codé mais NON retenu. Les autres procédures créées dans ALIVEcode (courriels) : contenu INCONNU.
-- 11 nov. : on garde le style actuel du code (115 200 bauds, INPUT_PULLUP, commentaires en français) malgré les écarts
-  avec les exemples du cours.
 - Un autre groupe a le même projet ; l'utilisateur n'a pas vu leur prototype (il croit qu'ils ont un capteur de
   température et une caméra sur le bracelet : non vérifié).
+
+## ÉTAT DE LA REMISE ITÉRATION 2 (relu le 11 nov. 2026, 19 h, d'après le zip `iteration2.zip`)
+- Dans le zip : `iteration2.py` (objet « watch », balises par pièce, stats par minute, historique, procédures par actions),
+  `fallguard_xiao_serie_1/` (.ino + `secrets.h`), 3 captures, 1 vidéo d'écran (73 s), 2 vidéos MOV, 2 photos du montage.
+- Vu sur les captures : projet ALIVEcode « FallWatch », 21 composants, objet IoT « myWatch-esp32 ». Le code dit que les SOS vont dans
+  l'historique mais ne comptent pas dans `chutes_total` (règle écrite dans `iteration2.py`).
+- À CORRIGER avant remise : (1) `fallguard_utils.py` absent du zip (version de l'équipe, avec `rappel_bracelet`, `simuler_chute`,
+  lignes `W:`) ; (2) `secrets.h` contient un vrai mot de passe Wi-Fi : le retirer, mettre `secrets.h.exemple` ; (3) aucune capture
+  des Procédures, des Déclencheurs ni du graphe de données froides ; dataset sans lignes.
+- À SURVEILLER : en-tête du .ino périmé (parle du Pi, « rien testé ») ; `#define CARTE_XIAO_C3` actif alors que le montage photographié
+  ressemble à un DevKit (INCONNU : carte réellement téléversée) ; `get_doc` échoue en silence (repli local) donc ajouter une ligne de
+  journal qui prouve la lecture ; zip d'environ 100 Mo (limite INCONNU) ; `IMG_2252.MOV` flou.
+- Date : remise le 10 nov. à 0 h 14, tardive jusqu'au 11 nov. à 0 h 14 : passée au moment de cette relecture. Pénalité INCONNUE.
+- Le code n'a pas été exécuté par Claude (fichier manquant) ; vidéos vues seulement en images extraites.
 
 ## SUGGÉRÉ par Claude (pas encore décidé)
 - Détection de chute en 3 phases (impact, attente 1 s, immobilité 3 s + chute libre ou changement d'orientation), préalerte de 15 s
@@ -45,8 +61,8 @@ Ne confonds pas ce qui est DÉCIDÉ et ce qui a été seulement SUGGÉRÉ. Si un
   avec supports de barrettes à ressort 20 mm. Éviter cuir, maillons métalliques, petites goupilles. Fenêtre du MAX30102
   légèrement bombée, sans lumière parasite ; sangle ni trop lâche ni trop serrée.
 - Procédures Aliot (≥ 2 exigées) : `alerte_chute` (courriel « FallGuard : chute détectée »), `couper_alarme` (envoi d'action
-  `arreter_alarme` à l'objet `watch`), optionnelle `bracelet_hors_ligne` (courriel).
-- Déclencheurs Aliot (≥ 2 exigés) : base de données `/doc/chute` = true → `alerte_chute` ; connexion de l'objet `watch`
+  `arreter_alarme` à l'objet `fallguard`), optionnelle `bracelet_hors_ligne` (courriel).
+- Déclencheurs Aliot (≥ 2 exigés) : base de données `/doc/chute` = true → `alerte_chute` ; connexion de l'objet `fallguard`
   Déconnecté → `bracelet_hors_ligne` ; optionnel `/doc/porte` = false → courriel « bracelet non porté ». Comparateurs et
   type de la valeur (true ou "true") : INCONNU, à vérifier dans l'interface. Le courriel part vers l'adresse du compte.
 - Données froides / graphe : dataset avec colonnes `bpm`, `accel`, `rssi` (+ `pression`, `temp` si ajoutés), graphes BPM et
@@ -132,73 +148,70 @@ pages étaient coupés dans ce que j'ai pu lire : je ne décris que ce que j'ai 
   avoir `on_action_recv` pour cet id) et « Envoi de courriels » (objet + corps, envoyé au courriel du créateur du projet).
 - Déclencheur = onglet « Déclencheurs » : « Changement dans la base de données » (`champ comparateur valeur` → procédure) ou
   « Changement d'état de connexion d'un objet IoT » (objet + Connecté/Déconnecté → procédure).
-- Créés dans ALIVEcode (vu sur les captures d'un coéquipier le 11 nov.) : 5 déclencheurs (objet déconnecté, porte == false,
-  en_ligne == false, detection_active == false, chute == true -> Enrégistrer chute) et 5 procédures. « Alerte chute » n'est
-  appelée par aucun déclencheur (à vérifier).
+- Propositions pour FallGuard : voir la section SUGGÉRÉ ci-dessus (rien n'est encore créé dans ALIVEcode).
 
 - Données froides (lu) : « Créer un dataset » (nom + description, nouveau ou existant), « Modifier le dataset » (ajouter ses
   colonnes, puis le dataset se remplit quand on change les champs de la base chaude ; ou import JSON/CSV), « Ajouter un graphe »
-  (depuis le dataset). Sur la page Document temps réel, une liste « insérer les données dans le dataset » relie le document
-  au dataset.
-- Dataset « Fallguard_mesures » : colonnes Date (automatique = axe X), bpm_moyen, bpm_min, bpm_max, accel_max, chutes_total,
-  pieces_stats ; se remplit depuis le 11 nov. vers 12 h. On ne choisit pas les axes : chaque colonne ajoutée au graphe = une
-  courbe. PROBLÈMES OUVERTS : plusieurs lignes identiques par minute (une ligne par mise à jour du document ?) ; graphes
-  « Chutes cumulées » et accel vides alors que les colonnes ont des valeurs (type de colonne ? INCONNU).
+  (depuis le dataset). Le détail des colonnes/graphes est dans des captures non lisibles en texte : INCONNU.
 
-- Capteur de pression (REPORTÉ itération 3) : un code du 7 nov. est décrit dans d'anciennes notes (`pressionPin`, champ
-  `pression`, `/doc/serrage`) mais il N'EST PAS dans les fichiers de ce dossier (vérifié le 10 nov.).
+- Capteur de pression, code ajouté le 7 nov. (testé seulement avec faux aliot + simulation, jamais sur une vraie carte) :
+  `.ino` lisent `pressionPin` (XIAO : GPIO4/D2 ; DevKit : GPIO34) et envoient `D:...:type:pression` (brut 0–4095) ;
+  `fallguard_utils.py` lit le 7e champ (optionnel) et simule un cycle de 120 s (bon, lâche 85–100 s, retiré 100–110 s) ;
+  `iteration2.py` écrit `/doc/pression` (%), `/doc/serrage` (bon/lache/trop serre/non porte/inconnu) et `/doc/porte`
+  (pression ≥ SEUIL_PORTE si le capteur répond, sinon doigt du MAX30102). Seuils 5 / 15 / 80 % INVENTÉS, à calibrer.
+- « Watch.py » demandé par l'utilisateur : aucun fichier de ce nom dans le dossier (INCONNU) ; la simulation a été
+  ajoutée à `fallguard_utils.py` (SIMULATION = True) et à `iteration2.py`.
 
-## Fichiers (racine du dépôt, vérifiés le 11 nov.)
-- `config.ini` (venu d'ALIVEcode, le bon, ne pas modifier, ignoré par git) : section `[watch]`, `main = watch.py`.
-  Dans ALIVEcode, l'objet s'affiche sous le nom « myWatch-esp32 » (même obj_id).
-- `iteration2.py` : programme principal, `AliotObj("watch")`, même code pour ESP32 DevKit et XIAO.
-  `watch/watch.py` = COPIE de `iteration2.py` (+ sys.path vers la racine), lancée par `aliot run watch` depuis la racine.
-  Modifier `iteration2.py` puis recopier.
-- `fallguard_utils.py` : série 115 200 bauds (SIMULATION = True pour tester sans carte, PORT = None = détection auto).
-  Bracelet -> PC : `D:bpm:accel:rssi:etat:doigt:type` (1/s ; accel = PIC de la dernière seconde), `E:alerte:chute|sos`,
-  `E:annule`, `E:acquitte`, `W:Chambre,-48;Salon,-71` (balises, toutes les 10 s). Lignes de débogage du bracelet
-  (`Impact`, `Verification`, ...) affichées dans le terminal avec `[bracelet]` (MOTS_DEBOGAGE = () pour les masquer).
-  PC -> bracelet : `a` arrêter, `t` test, `o` SOS, `c` chute simulée, `r` rappel, `e`/`x` détection, `s`+octet seuil
-  (dixièmes de g).
-- Croquis À JOUR : `fallguard_esp32_serie_1/` et `fallguard_xiao_serie_1/` (identiques sauf `#define CARTE_XIAO_C3` et
-  `utiliserGPS`). Wi-Fi dans `secrets.h` de chaque dossier (ignoré par git ; modèle `secrets.h.exemple`).
-  `fallguard_esp32_serie/` et `fallguard_xiao_serie.ino` = ANCIENNES versions. Aucun croquis ne commande de LED.
-- `fallguard_balise/` : balise de pièce (ESP32 DevKit, réseau `FG_<pièce>`, canal 1, LED intégrée GPIO2). Python : pièce =
-  balise la plus forte 2 scans de suite -> `/doc/piece`, `/doc/balises`, `/doc/piece_chute` (et `piece` dans l'historique).
-- Champs écrits seulement quand ils CHANGENT (pour les déclencheurs), renvoyés après une reconnexion : `/doc/chute`,
-  `/doc/porte` (vrai = doigt sur le MAX30102 ; faux après 30 s sans contact), `/doc/en_ligne` (faux après 5 s sans mesure).
-- Feu `/doc/feu` : GREEN repos ; YELLOW préalerte, test, non porté ; RED alerte, hors ligne.
-- Stats par minute (données froides) : `/doc/bpm_moyen`, `/doc/bpm_min`, `/doc/bpm_max` (BPM valides 30–220 seulement),
-  `/doc/accel_max`, `/doc/piece_stats`. `stats_heure` supprimé le 11 nov. (horodatage = colonne Date du dataset).
-- Au démarrage : get_doc de `/doc/seuil_chute` (reprise du seuil) et création des champs absents (`derniere_chute`,
-  `type_alerte`, `piece_chute`, `chutes_total`, `historique`).
-- Actions de l'objet : `arreter_alarme`, `tester_alarme`, `simuler_chute`, `alterner_detection` (True/False),
-  `regler_seuil` (1,2 à 4 g), et pour les procédures `enregistrer_chute` (get_doc puis update_doc de `/doc/chutes_total` +1
-  et `/doc/historique`, 20 dernières alertes {date, piece, type} ; un SOS va dans l'historique mais NE compte PAS dans chutes_total, décidé le 11 nov.) et `rappel_bracelet` (non retenu).
-- `interface_bracelet.html` : dessin du bracelet en HTML/CSS pour un composant HTML (ALIVEcode n'affiche pas le SVG).
-- Ancien design (à ignorer) : `fallguard_pi_pont.py`, `fallguard_camera.py`, `fallguard_esp32_aliot.ino`,
-  `fallguard_tableau_de_bord.txt`.
+## Fichiers (dossier serie/)
+- `iteration2.py` : programme principal. `fallguard_utils.py` : série (SIMULATION = True pour tester sans carte).
+- `fallguard_esp32_serie.ino` / `fallguard_xiao_serie.ino` : protocole série `D:bpm:accel:rssi:etat:doigt:type`,
+  événements `E:...`, commandes `a` arrêter, `t` test, `o` SOS, `e`/`x` détection, `s`+octet seuil.
+- `fallguard_balise/` : balise de pièce (ESP32 DevKit ou XIAO C3, réseau `FG_<pièce>`, canal 1 ; puissance réglée
+  après `softAP`, nouvel essai si échec). Le bracelet (`*_serie_1`) ne scanne que le canal 1 (400 ms, abandon après 5 s,
+  doublon de nom = plus fort gardé). Modifié le 17 nov. : compilé pour les 2 cartes, PAS testé sur carte.
+- 17 nov. : `/doc/porte` ne changeait jamais dans le document (2e `update_doc` de la même seconde perdu, comme
+  `derniere_chute`). Corrigé : porte / chute / en_ligne partent dans le même `update_doc` que les mesures
+  (`champs_changes`). Pas encore testé sur ALIVEcode.
+- 17 nov. (demandé par l'utilisateur) : scan des balises toutes les 5 s (`SCANS_VIDES_MAX` = 6, environ 30 s) et scan
+  immédiat au début d'une préalerte/alerte ; ligne `W:...;!` -> la pièce est fixée sans attendre le 2e scan.
+  `lire()` renvoie `("W", balises, urgent)`. Compilé (2 cartes), pas testé sur carte.
+- 17 nov. : la pièce ne changeait pas. Corrigé dans `traiter_balises` : force lissée par balise (LISSAGE 0,5), changement
+  si une balise dépasse la pièce actuelle de 3 dB (ECART_CHANGEMENT), balise absente -5 dB/scan, oubliée après 6 scans
+  -> « Inconnue ». `/doc/piece` et `/doc/balises` partent avec les mesures (`a_envoyer`). Testé hors ligne seulement.
+- Hors dossier (ancien design, à ignorer pour les itérations 2 et 3) : relais Pi par HTTP (`fallguard_pi_pont.py`),
+  simulateur, vérification de chute par la pose (`fallguard_camera.py`, ne répond pas à l'itération 3).
+
+- 22 nov. (itération 3) : `gestes.py` (caméra picamera2 ou webcam, `quickhands.HandDetector` du cours +
+  MediaPipe Face Detection pour « chut » / main levée, posture tenue 1-2 s, pause 3 s) ; `iteration3.py` = copie
+  de `iteration2.py` + gestes (action selon l'état du bracelet, refus si gyroscope < 25 deg/s dans les 5 s, sauf
+  gestes urgents ; champs `/doc/geste`, `/doc/geste_action`, `/doc/appel`, `/doc/silence`). `.ino` _serie_1 :
+  commandes v/h/n/m, champ `rot` (7e de `D:`), écran « Ca va ? » (compilé pour les 2 cartes, pas téléversé). `quickhands.py` : TODO 3-5 complétés
+  (`infoOnHand`, `findDistance(p1, p2)` sur des points (x, y)), `fingersUp` garde la liste dans `self.fingers`.
+  Testé hors ligne seulement (faux aliot, mains synthétiques) ; MediaPipe/caméra/carte : PAS testés. Seuils inventés.
+- Examen pratique : vendredi 27 nov. 2026 (Arduino, pyserial dans VS Code, aliot-py + tableau de bord comme
+  l'itération 2). Sur machine ; TOUT le site alivecode.ca permis (doc aliot ET pages du cours) ; Arduino + n'importe lequel des capteurs vus en
+  cours (un ou plusieurs). Liste exacte des capteurs vus en cours : INCONNU (vu dans les pages : DHT11,
+  photorésistance, bouton, LED, buzzer).
+
+- 22 nov. : PROBLÈME PCB (XIAO) non réglé : la LED rouge du MPU6050 s'allume sur tous les connecteurs, mais le
+  MAX30102 et l'OLED ne marchent pas. Cause INCONNUE (pistes : ordre VCC/GND des connecteurs différent de celui des
+  modules, module abîmé, soudure). Sketch de diagnostic : `test_i2c_xiao/`. Résultat du scan : INCONNU.
 
 ## À FAIRE
-- Itération 2 : réparer/vérifier le MPU6050 puis tester une vraie chute ; tester les balises ; vérifier get_doc ;
-  graphes accel et chutes ; captures, vidéo, photos.
+- Itération 2 : statistiques, données froides, 2 procédures, 2 déclencheurs, données de départ, structure JSON plus riche,
+  compteurs pour atteindre 10 composants contrôlés ; captures, vidéo, photos.
 - Itération 3 : module gestes (caméra du Pi + MediaPipe) branché sur `iteration2.py` (champ `/doc/geste`, appel de
   `arreter_alarme()`, `declencher_sos()`, `tester_alarme()` de `fallguard_utils.py`).
 
 ## INCONNU / non vérifié
 - Le professeur exige-t-il une température ? Qu'attend-il par « statistiques » ?
 - Brochage réel du PCB reçu vs `connexions_v5.md` et `fallguard_xiao_serie.ino` (sérigraphie non lisible sur les photos).
+- Le capteur de pression n'est pas encore lu dans le `.ino` ni dans `iteration2.py` ; champ `pression` non ajouté au protocole.
 - Où tourne `iteration2.py` : PC ou Pi ? Modèle de la caméra (module du Pi ou webcam USB) et longueur du câble ?
 - Le prof accepte-t-il l'ordinateur à la place du Pi ? Un code ESP32 compte-t-il comme « code Arduino » ?
 - La librairie de détection de mains créée en classe n'a pas été vue.
-- TESTÉ avec la vraie carte (COM4) et le vrai ALIVEcode : connexion, document, composants, actions, procédure
-  enregistrer_chute (compteur), dataset. NON vu fonctionner : détection d'une VRAIE chute, balises de pièce, version XIAO,
-  graphes accel et chutes. MediaPipe sur Pi 4 : non testé.
-- 11 nov. : le MPU6050 de la platine lit ~6,8 g au repos (valeur figée, toutes les mesures « en mouvement ») alors qu'il
-  lisait ~1,0 g avant les essais de chute : fil desserré ou module abîmé probable, à vérifier.
-- get_doc : syntaxe chaîne `get_doc("/doc/champ")` (signature d'aliot-py 1.0.6) ; fonctionnement réel non prouvé :
-  derniere_chute = « Aucune » alors que chute = true. Test : le journal au démarrage doit afficher le seuil du document (2.6).
-- Remise de l'itération 2 (10 nov. 0 h 14 selon l'énoncé) : faite ou repoussée ? INCONNU.
-- Valeurs attendues par le feu de circulation (GREEN/YELLOW/RED supposé) et format des valeurs du curseur.
+- Les .ino n'ont passé qu'une vérification de syntaxe ; `iteration2.py` a été essayé avec un faux aliot, jamais
+  avec le vrai ALIVEcode ni une vraie carte. MediaPipe sur Pi 4 : non testé.
+- Valeurs attendues par le feu de circulation (GREEN/YELLOW/RED supposé) et format des valeurs du curseur/interrupteur.
 - Le code de départ du cours (`serre_utils.py`) n'a pas pu être lu en entier.
 - Date de validation du projet par le prof, noms des 4 membres et répartition des tâches.

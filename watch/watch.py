@@ -46,10 +46,18 @@ etat_precedent = {"etat": "repos"}
 DELAI_HORS_LIGNE = 5                         # secondes sans mesure = bracelet hors ligne
 DELAI_NON_PORTE = 30                         # secondes sans contact au poignet = non porté
 liaison = {"en_ligne": False, "derniere_mesure": 0.0, "sans_contact_depuis": None}
-# Localisation : la pièce change seulement si la même balise est la plus forte 2 scans de suite
-# (évite que la pièce saute d'une valeur à l'autre près d'une porte).
-SCANS_POUR_CHANGER = 2
-localisation = {"piece": "Inconnue", "candidat": None, "compte": 0}
+# Localisation (un scan toutes les 5 s) : la force de chaque balise est LISSÉE sur les derniers
+# scans, puis on change de pièce dès qu'une autre balise dépasse celle de la pièce actuelle d'au
+# moins ECART_CHANGEMENT dB. Réagit en 5-10 s, même quand deux balises ont presque la même force,
+# sans sauter d'une pièce à l'autre près d'une porte.
+# Scan immédiat d'une préalerte/alerte : la pièce est prise directement dans ce scan.
+LISSAGE = 0.5                  # poids du nouveau scan (1 = pas de lissage)
+ECART_CHANGEMENT = 3           # dB d'avance exigés pour quitter la pièce actuelle
+BAISSE_ABSENTE = 5             # dB retirés à une balise à chaque scan où elle n'est pas captée
+SCANS_ABSENTE_MAX = 6          # balise oubliée après 6 scans sans elle (environ 30 s) -> « Inconnue »
+localisation = {"piece": "Inconnue", "forces": {}, "absences": {}}
+# Champs à joindre au PROCHAIN envoi des mesures (un 2e update_doc dans la même seconde se perd)
+a_envoyer = {}
 # Statistiques par minute (pour les DONNÉES FROIDES / graphes) : le dataset ALIVEcode se remplit
 # quand ces champs changent, donc une ligne par minute au lieu d'une par seconde.
 INTERVALLE_STATS = 60                        # secondes
@@ -61,14 +69,20 @@ cumul = {"debut": time.time(), "bpm": [], "accel_max": 0.0}
 derniers_envois = {}
 
 
-def maj_si_change(champs):
-    # Si l'objet n'est pas connecté, aliot JETTE l'envoi sans erreur : on ne mémorise la valeur
-    # que si elle est vraiment partie, pour la renvoyer sinon.
+def champs_changes(champs):
+    """Garde seulement les champs dont la valeur a changé depuis le dernier envoi, et les note
+    comme envoyés. Si l'objet n'est pas connecté, aliot JETTE l'envoi sans erreur : on ne
+    mémorise rien, pour les renvoyer plus tard."""
     if not fallguard.connected_to_alivecode:
-        return
+        return {}
     nouveaux = {c: v for c, v in champs.items() if derniers_envois.get(c) != v}
+    derniers_envois.update(nouveaux)
+    return nouveaux
+
+
+def maj_si_change(champs):
+    nouveaux = champs_changes(champs)
     if nouveaux:
-        derniers_envois.update(nouveaux)
         fallguard.update_doc(nouveaux)
 
 
@@ -161,7 +175,6 @@ def traiter_mesures(d):
     liaison["derniere_mesure"] = time.time()
     if not liaison["en_ligne"]:
         liaison["en_ligne"] = True
-        maj_si_change({"/doc/en_ligne": True})
         journal("Bracelet en ligne")
     # Porté : contact avec la peau, ou perte de contact depuis moins de DELAI_NON_PORTE s
     # (le capteur perd souvent le contact quelques secondes quand la personne bouge).
@@ -177,30 +190,41 @@ def traiter_mesures(d):
     statut = STATUTS.get(affichage, affichage)
     if etat in ("prealerte", "alerte"):
         statut += " - piece : " + localisation["piece"]
-    fallguard.update_doc({
+    if etat == "alerte" and etat_precedent["etat"] != "alerte":
+        # Format « 11/11/2026 a 14h59 » : ALIVEcode transforme « 11/11/2026 14:59:34 » en date UTC.
+        quand = datetime.datetime.now().strftime("%d/%m/%Y a %Hh%M")
+        derniere_alerte.update(date=quand, piece=localisation["piece"], type=d["type"])
+    mesures = {
         "/doc/bpm": d["bpm"],
         "/doc/accel": d["accel"],
         "/doc/rssi": d["rssi"],
         "/doc/niveau": etat,
         "/doc/statut": statut,
         "/doc/feu": FEU.get(affichage, "GREEN"),
-    })
+    }
+    # Dernière alerte : renvoyée avec les mesures de chaque seconde (un envoi séparé au moment de
+    # l'alerte se perdait parmi les autres envois de la même seconde).
+    if derniere_alerte["date"]:
+        mesures["/doc/derniere_chute"] = derniere_alerte["date"]
+        mesures["/doc/type_alerte"] = derniere_alerte["type"]
+        mesures["/doc/piece_chute"] = derniere_alerte["piece"]
     if porte != liaison.get("porte"):
         liaison["porte"] = porte
         journal("Bracelet porte" if porte else "Bracelet NON PORTE (pas de contact depuis "
                 + str(DELAI_NON_PORTE) + " s)")
-    if etat == "alerte" and etat_precedent["etat"] != "alerte":
-        quand = datetime.datetime.now().strftime("%d/%m/%Y %H:%M:%S")
-        derniere_alerte.update(date=quand, piece=localisation["piece"], type=d["type"])
-    maj_si_change({"/doc/porte": porte, "/doc/chute": etat == "alerte"})
+    # Champs des déclencheurs (écrits seulement quand ils changent) : dans le MÊME envoi que les
+    # mesures. Un 2e update_doc dans la même seconde se perdait (porte ne changeait jamais).
+    mesures.update(champs_changes({"/doc/en_ligne": True, "/doc/porte": porte,
+                                   "/doc/chute": etat == "alerte"}))
+    if fallguard.connected_to_alivecode:       # pièce et balises du dernier scan
+        mesures.update(a_envoyer)
+        a_envoyer.clear()
+    fallguard.update_doc(mesures)
     cumuler_stats(d, porte)
     if etat != etat_precedent["etat"]:
         if etat == "prealerte":
             journal("Chute probable (" + localisation["piece"] + ") : annulation possible pendant 15 s")
         elif etat == "alerte":
-            quand = derniere_alerte["date"]
-            fallguard.update_doc({"/doc/type_alerte": d["type"], "/doc/derniere_chute": quand,
-                                  "/doc/piece_chute": localisation["piece"]})
             journal("ALERTE (" + d["type"] + ") dans : " + localisation["piece"])
             fallguard.update_component("Mybuzzer", FREQUENCE_ALARME)
         etat_precedent["etat"] = etat
@@ -234,20 +258,41 @@ def verifier_liaison():
         journal("Bracelet HORS LIGNE (plus de donnees)")
 
 
-def traiter_balises(balises):
-    """Scan des balises {pièce: rssi} : la balise captée le plus fort donne la pièce."""
-    meilleure = max(balises, key=balises.get) if balises else "Inconnue"
-    if meilleure == localisation["candidat"]:
-        localisation["compte"] += 1
+def traiter_balises(balises, urgent=False):
+    """Scan des balises {pièce: rssi}. urgent = scan immédiat d'une préalerte/alerte : la personne
+    ne bouge plus, la balise la plus forte de CE scan donne la pièce de la chute."""
+    forces, absences = localisation["forces"], localisation["absences"]
+    for nom, rssi in balises.items():
+        if nom in forces and not urgent:
+            forces[nom] = round(LISSAGE * rssi + (1 - LISSAGE) * forces[nom], 1)
+        else:
+            forces[nom] = rssi
+        absences[nom] = 0
+    for nom in list(forces):                      # balises non captées : elles s'affaiblissent
+        if nom not in balises:
+            absences[nom] = absences.get(nom, 0) + 1
+            forces[nom] -= BAISSE_ABSENTE
+            if absences[nom] >= SCANS_ABSENTE_MAX:
+                del forces[nom], absences[nom]
+    actuelle = localisation["piece"]
+    if urgent and balises:
+        nouvelle = max(balises, key=balises.get)
+    elif not forces:
+        nouvelle = "Inconnue"
     else:
-        localisation["candidat"] = meilleure
-        localisation["compte"] = 1
-    champs = {"/doc/balises": balises}
-    if meilleure != localisation["piece"] and localisation["compte"] >= SCANS_POUR_CHANGER:
-        localisation["piece"] = meilleure
-        champs["/doc/piece"] = meilleure
-        journal("Resident localise : " + meilleure)
-    fallguard.update_doc(champs)
+        meilleure = max(forces, key=forces.get)
+        if actuelle not in forces or forces[meilleure] >= forces[actuelle] + ECART_CHANGEMENT:
+            nouvelle = meilleure
+        else:
+            nouvelle = actuelle
+    a_envoyer["/doc/balises"] = balises
+    if nouvelle != actuelle:
+        localisation["piece"] = nouvelle
+        a_envoyer["/doc/piece"] = nouvelle
+        journal("Resident localise : " + nouvelle + (" (scan d'alerte)" if urgent else ""))
+    # Alerte déjà notée avec l'ancienne pièce (SOS : le scan arrive juste après) : on corrige
+    if urgent and derniere_alerte["date"] and etat_precedent["etat"] == "alerte":
+        derniere_alerte["piece"] = localisation["piece"]
 
 
 def traiter_evenement(e):
@@ -297,6 +342,7 @@ def start():
             statistiques["chutes_total"] = int(deja)
         elif champ == "/doc/historique" and isinstance(deja, list):
             statistiques["historique"] = deja
+    localisation.update(piece="Inconnue", forces={}, absences={})
     fallguard.update_doc({"/doc/piece": "Inconnue", "/doc/balises": {}})
     journal("Bracelet connecte, seuil de chute = " + str(seuil) + " g")
 
@@ -309,7 +355,7 @@ def start():
             if lu[0] == "D":
                 traiter_mesures(lu[1])
             elif lu[0] == "W":
-                traiter_balises(lu[1])
+                traiter_balises(lu[1], lu[2])
             else:
                 traiter_evenement(lu[1])
         except KeyboardInterrupt:
