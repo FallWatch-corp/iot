@@ -52,6 +52,7 @@ TOLERANCE_PERTE = 0.3         # s : la main peut « disparaître » ce temps san
 RAPPORT_DOIGT_TENDU = 1.15    # bout du doigt au moins 15 % plus loin du poignet que l'articulation
 POUCE_SORTI = -0.1            # position du pouce sur l'axe index -> auriculaire (< = à côté de l'index)
 POUCE_REPLIE = 0.4            # (> = sous le majeur / l'annulaire, donc replié dans la paume)
+POUCE_PAUME = 0.25            # signal d'aide, étape 1 : pouce replié devant la paume (plus tolérant)
 POUCE_HAUT = 0.3              # pouce levé : bout du pouce au-dessus de la base de l'index
 DISTANCE_BOUCHE = 0.5         # chut : bout de l'index à moins de 0,5 largeur de visage de la bouche
 HAUT_SANS_VISAGE = 0.4        # main levée sans visage vu : poignet dans les 40 % du haut de l'image
@@ -150,9 +151,16 @@ def classer_posture(p, visage):
     if n == 0:
         if pouce_sorti and p[4][1] < p[5][1] - POUCE_HAUT * paume:
             return "pouce", mesures
-        if pouce_replie:
-            return "poing_pouce_dedans", mesures          # étape 2 du signal d'aide
+        if not pouce_sorti:
+            # Étape 2 du signal d'aide : tout poing dont le pouce ne sort pas sur le côté.
+            # Le pouce caché sous les doigts est mal placé par MediaPipe : on n'exige plus
+            # qu'il soit « bien replié » (il ne compte que juste après l'étape 1).
+            return "poing_pouce_dedans", mesures
         return None, mesures
+    if n >= 3 and pouce > POUCE_PAUME:
+        # Étape 1 : paume ouverte, pouce replié (3 doigts tendus suffisent : avec le pouce
+        # replié, l'auriculaire ou l'annulaire est parfois vu plié)
+        return "paume_pouce_replie", mesures
     if tendus == [True, False, False, False]:
         distance = visage and visage.get("distance_index", _dist(p[8], visage["bouche"]))
         if visage and distance < DISTANCE_BOUCHE * visage["largeur"]:
@@ -160,8 +168,6 @@ def classer_posture(p, visage):
         return "un_doigt", mesures
     if tendus == [True, True, False, False]:
         return "deux_doigts", mesures
-    if n == 4 and pouce_replie:
-        return "paume_pouce_replie", mesures              # étape 1 du signal d'aide
     if n == 4 and pouce_sorti:
         haut = visage["yeux_y"] if visage else HAUT_SANS_VISAGE * HAUTEUR
         if p[0][1] < haut:

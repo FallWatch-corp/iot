@@ -192,7 +192,12 @@ fallguard.on_action_recv(action_id="enregistrer_chute", callback=enregistrer_chu
 def traiter_mesures(d):
     etat = d["etat"]
     liaison["derniere_mesure"] = time.time()
-    if d.get("rot") is not None:                   # rotation max du poignet (fusion des gestes)
+    # Rotation max du poignet (fusion des gestes). accel = 0,00 g = MPU6050 absent (un MPU qui
+    # marche lit environ 1 g au repos) : rot vaut alors toujours 0 et ne prouve rien, on ne
+    # s'en sert pas (geste accepté « non vérifié » au lieu d'être toujours refusé).
+    if d.get("rot") is None or d["accel"] <= 0.1:
+        poignet["mesure"] = False
+    else:
         poignet["mesure"] = True
         poignet["recents"] = [(t, r) for t, r in poignet.get("recents", [])
                               if time.time() - t <= FENETRE_POIGNET] + [(time.time(), d["rot"])]
